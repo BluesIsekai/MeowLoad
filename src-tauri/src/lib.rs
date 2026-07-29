@@ -1,14 +1,20 @@
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
+mod bin_manager;
+mod commands;
+
+use commands::DownloadManager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet])
+        .manage(DownloadManager::new())
+        .invoke_handler(tauri::generate_handler![
+            commands::check_and_prepare_binaries,
+            commands::get_media_info,
+            commands::start_download,
+            commands::cancel_download,
+            commands::open_file_location,
+        ])
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .expect("error while running MeowLoad application");
 }
