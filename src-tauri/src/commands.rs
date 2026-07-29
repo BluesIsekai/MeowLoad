@@ -16,9 +16,9 @@ pub struct DownloadProgressPayload {
     pub percentage: f32,
     pub speed: String,
     pub eta: String,
+    pub status: String, // "downloading" | "finished" | "error"
 }
 
-// Managed state to track running yt-dlp child processes by download ID
 pub struct DownloadManager {
     pub processes: Arc<Mutex<HashMap<String, Child>>>,
 }
@@ -51,8 +51,16 @@ pub async fn check_and_prepare_binaries(app: AppHandle) -> Result<bool, String> 
         _ => return Err("Unsupported Operating System".into()),
     };
 
-    // Ensure yt-dlp binary is downloaded
     bin_manager::download_file(&app, ytdlp_url, ytdlp_name).await?;
+
+    let bin_dir = get_binaries_dir(&app)?;
+    let ffmpeg_exe = if cfg!(target_os = "windows") { "ffmpeg.exe" } else { "ffmpeg" };
+
+    if !bin_dir.join(ffmpeg_exe).exists() && target_os == "windows" {
+        let ffmpeg_url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip";
+        let zip_path = bin_manager::download_file(&app, ffmpeg_url, "ffmpeg.zip").await?;
+        bin_manager::extract_ffmpeg_zip(&zip_path, &bin_dir)?;
+    }
 
     Ok(true)
 }
@@ -86,16 +94,12 @@ pub async fn start_download(
     url: String,
     format_id: String,
     output_dir: String,
+    container: String, // Accepts "mp4", "mkv", "webm"
     state: State<'_, DownloadManager>,
 ) -> Result<(), String> {
     let bin_dir = get_binaries_dir(&app)?;
-    
-    // Resolve yt-dlp & ffmpeg paths
     let ytdlp_name = if cfg!(target_os = "windows") { "yt-dlp.exe" } else { "yt-dlp" };
-    let ffmpeg_name = if cfg!(target_os = "windows") { "ffmpeg.exe" } else { "ffmpeg" };
-    
     let ytdlp_path = bin_dir.join(ytdlp_name);
-    let ffmpeg_path = bin_dir.join(ffmpeg_name);
 
     let output_template = format!("{}/%(title)s.%(ext)s", output_dir);
 
@@ -103,9 +107,10 @@ pub async fn start_download(
     cmd.args([
         "-f", &format_id,
         "-o", &output_template,
-        "--ffmpeg-location", ffmpeg_path.to_str().unwrap_or_default(),
+        "--merge-output-format", &container, // Forces output container (mp4/mkv)
+        "--ffmpeg-location", bin_dir.to_str().unwrap_or_default(),
         "--newline",
-        "--progress-template", "%(progress.downloaded_bytes)s|%(progress.total_bytes)s|%(progress.speed)s|%(progress.eta)s",
+        "--progress-template", "download:MEOW_PROGRESS:%(progress.downloaded_bytes)s|%(progress.total_bytes,progress.total_bytes_estimate)s|%(progress.speed)s|%(progress.eta)s",
         &url
     ])
     .stdout(Stdio::piped())
@@ -113,6 +118,7 @@ pub async fn start_download(
 
     let mut child = cmd.spawn().map_err(|e| e.to_string())?;
     let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
+    let stderr = child.stderr.take();
 
     {
         let mut processes = state.processes.lock().await;
@@ -122,32 +128,69 @@ pub async fn start_download(
     let download_id = id.clone();
     let processes_ref = state.processes.clone();
 
-    // Stream lines in real-time and emit events back to React
     tokio::spawn(async move {
         let mut reader = BufReader::new(stdout).lines();
 
         while let Ok(Some(line)) = reader.next_line().await {
-            let parts: Vec<&str> = line.trim().split('|').collect();
-            if parts.len() == 4 {
-                let downloaded: f32 = parts[0].parse().unwrap_or(0.0);
-                let total: f32 = parts[1].parse().unwrap_or(1.0);
-                let percentage = if total > 0.0 { (downloaded / total) * 100.0 } else { 0.0 };
+            let line_str = line.trim();
 
-                let _ = app.emit(
-                    "download_progress",
-                    DownloadProgressPayload {
-                        id: download_id.clone(),
-                        percentage,
-                        speed: parts[2].to_string(),
-                        eta: parts[3].to_string(),
-                    },
-                );
+            if line_str.starts_with("MEOW_PROGRESS:") {
+                let clean_line = &line_str["MEOW_PROGRESS:".len()..];
+                let parts: Vec<&str> = clean_line.split('|').collect();
+
+                if parts.len() == 4 {
+                    let downloaded: f32 = parts[0].parse().unwrap_or(0.0);
+                    let total: f32 = parts[1].parse().unwrap_or(0.0);
+                    let percentage = if total > 0.0 { (downloaded / total) * 100.0 } else { 0.0 };
+
+                    let speed = if parts[2] != "NA" && !parts[2].is_empty() {
+                        parts[2].to_string()
+                    } else {
+                        "N/A".into()
+                    };
+
+                    let eta = if parts[3] != "NA" && !parts[3].is_empty() {
+                        parts[3].to_string()
+                    } else {
+                        "--:--".into()
+                    };
+
+                    let _ = app.emit(
+                        "download_progress",
+                        DownloadProgressPayload {
+                            id: download_id.clone(),
+                            percentage,
+                            speed,
+                            eta,
+                            status: "downloading".into(),
+                        },
+                    );
+                }
             }
         }
 
-        // Clean up process handle from state once finished
-        let mut processes = processes_ref.lock().await;
-        processes.remove(&download_id);
+        if let Some(err_stream) = stderr {
+            let mut err_reader = BufReader::new(err_stream).lines();
+            while let Ok(Some(err_line)) = err_reader.next_line().await {
+                eprintln!("[yt-dlp stderr]: {}", err_line);
+            }
+        }
+
+        {
+            let mut processes = processes_ref.lock().await;
+            processes.remove(&download_id);
+        }
+
+        let _ = app.emit(
+            "download_progress",
+            DownloadProgressPayload {
+                id: download_id.clone(),
+                percentage: 100.0,
+                speed: "0B/s".into(),
+                eta: "00:00".into(),
+                status: "finished".into(),
+            },
+        );
     });
 
     Ok(())
@@ -161,15 +204,12 @@ pub async fn cancel_download(
     let mut processes = state.processes.lock().await;
 
     if let Some(mut child) = processes.remove(&id) {
-        // Kill child process
         let _ = child.kill().await;
         Ok(true)
     } else {
         Err("No active download found with that ID".into())
     }
 }
-
-
 
 #[tauri::command]
 pub async fn open_file_location(app: AppHandle, path: String) -> Result<(), String> {
