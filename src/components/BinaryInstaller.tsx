@@ -36,26 +36,29 @@ export const BinaryInstaller: React.FC<{ onReady: () => void }> = ({ onReady }) 
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen p-6 text-red-500 text-center">
-        <h2 className="text-xl font-bold mb-2">Initialization Error</h2>
-        <p className="text-sm bg-red-950 p-4 rounded border border-red-800">{error}</p>
+      <div className="flex flex-col items-center justify-center h-screen bg-background p-lg text-error text-center">
+        <h2 className="font-headline-md text-headline-md font-bold mb-2">Initialization Error</h2>
+        <p className="font-body-sm text-body-sm bg-error-container text-on-error-container p-md rounded border border-error/50 max-w-[448px] break-words">{error}</p>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col items-center justify-center h-screen bg-slate-900 text-white p-6">
-      <div className="w-full max-w-md bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl text-center">
-        <h2 className="text-xl font-bold mb-2">Setting Up MeowLoad 🐾</h2>
-        <p className="text-slate-400 text-sm mb-6">{status}</p>
+    <div className="flex flex-col items-center justify-center h-screen bg-background text-on-background p-lg">
+      <div className="w-full max-w-[448px] bg-surface p-lg rounded-xl border border-surface-variant shadow-xl text-center">
+        <div className="w-12 h-12 rounded-full bg-surface-container-high flex items-center justify-center shrink-0 mx-auto mb-md">
+          <span className="material-symbols-outlined text-primary animate-spin">sync</span>
+        </div>
+        <h2 className="font-headline-md text-headline-md text-on-surface mb-2">Setting Up MeowLoad 🐾</h2>
+        <p className="font-body-sm text-body-sm text-on-surface-variant mb-lg">{status}</p>
 
-        <div className="w-full bg-slate-700 rounded-full h-3 mb-2 overflow-hidden">
+        <div className="w-full bg-[#27272A] rounded-full h-2 mb-2 overflow-hidden">
           <div
-            className="bg-indigo-500 h-full transition-all duration-200"
+            className="bg-[#6366F1] h-full rounded-full progress-bar-glow transition-all duration-200"
             style={{ width: `${progress}%` }}
           />
         </div>
-        <span className="text-xs text-slate-400">{progress}% Completed</span>
+        <span className="font-mono-label text-mono-label text-on-surface-variant">{progress}% Completed</span>
       </div>
     </div>
   );
