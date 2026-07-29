@@ -23,7 +23,7 @@ MeowLoad is a sleek, modern desktop application built with Electron and React th
 ### Prerequisites
 
 - Node.js (v16 or higher)
-- npm or yarn
+- pnpm or yarn or npm
 - FFmpeg
 
 ### Installation
@@ -36,20 +36,18 @@ git clone https://github.com/BluesIsekai/MeowLoad.git
 cd MeowLoad
 
 # Install dependencies
-npm install
+pnpm install
 
 # Start development mode
-npm run ele:dev
+pnpm tauri dev
 ```
 
 ## 🛠️ Available Scripts
 
 ```bash
-npm run dev              # Start Vite dev server only
-npm run electron:dev     # Start Electron app in development mode
-npm run build            # Build for production (web)
-npm run build:electron   # Build Electron app for production
-npm run lint             # Run ESLint
+pnpm dev                  # Start dev server only
+pnpm tauri dev            # Start tauri app in development mode
+pnpm tauri build          # Build Tauri app for production
 ```
 
 ## 🎯 How to Use
@@ -62,9 +60,8 @@ npm run lint             # Run ESLint
 
 ## 🏗️ Built With
 
-- **[Electron](https://www.electronjs.org/)** - Desktop application framework
+- **[Tauri](https://tauri.app/)** - Desktop application framework
 - **[React](https://react.dev/)** - UI library
-- **[Vite](https://vitejs.dev/)** - Build tool and dev server
 - **[yt-dlp](https://github.com/yt-dlp/yt-dlp)** - Video download engine
 
 ## 🎨 Design Philosophy
