@@ -33,5 +33,6 @@ futures-util = "0.3"
 zip = "2.1"
 tar = "0.4"
 flate2 = "1.0"
+xz2 = "0.1.7"
 
 

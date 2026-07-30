@@ -1,8 +1,8 @@
+use futures_util::StreamExt;
 use std::fs::{self, File};
-use std::io::{self, Read, Write};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter, Manager};
-use futures_util::StreamExt;
 
 #[derive(Clone, serde::Serialize)]
 pub struct DownloadProgress {
@@ -25,7 +25,7 @@ pub fn get_binaries_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-/// Downloads a binary or zip file directly from a URL to the local binary folder
+/// Downloads a binary or file directly from a URL to the local binary folder
 pub async fn download_file(
     app: &AppHandle,
     url: &str,
@@ -70,7 +70,9 @@ pub async fn download_file(
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(&target_path).map_err(|e| e.to_string())?.permissions();
+        let mut perms = fs::metadata(&target_path)
+            .map_err(|e| e.to_string())?
+            .permissions();
         perms.set_mode(0o755);
         fs::set_permissions(&target_path, perms).map_err(|e| e.to_string())?;
     }
@@ -78,7 +80,7 @@ pub async fn download_file(
     Ok(target_path)
 }
 
-/// Unzips ffmpeg.exe and ffprobe.exe from a downloaded .zip archive (Windows)
+/// Unzips ffmpeg.exe and ffprobe.exe from a .zip archive (Windows)
 pub fn extract_ffmpeg_zip(archive_path: &Path, target_dir: &Path) -> Result<(), String> {
     let zip_file = File::open(archive_path).map_err(|e| e.to_string())?;
     let mut archive = zip::ZipArchive::new(zip_file).map_err(|e| e.to_string())?;
@@ -100,7 +102,42 @@ pub fn extract_ffmpeg_zip(archive_path: &Path, target_dir: &Path) -> Result<(), 
         }
     }
 
-    // Clean up downloaded zip archive
+    let _ = fs::remove_file(archive_path);
+    Ok(())
+}
+
+/// Extracts ffmpeg binary from a .tar.xz archive (Linux)
+pub fn extract_ffmpeg_tar_xz(archive_path: &Path, target_dir: &Path) -> Result<(), String> {
+    let tar_file = File::open(archive_path).map_err(|e| e.to_string())?;
+    let xz_decoder = xz2::read::XzDecoder::new(tar_file);
+    let mut archive = tar::Archive::new(xz_decoder);
+
+    if let Ok(entries) = archive.entries() {
+        for entry in entries.flatten() {
+            if let Ok(path) = entry.path() {
+                if let Some(filename) = path.file_name() {
+                    let name_str = filename.to_string_lossy();
+                    if name_str == "ffmpeg" || name_str == "ffprobe" {
+                        let dest_path = target_dir.join(filename);
+                        let mut outfile = File::create(&dest_path).map_err(|e| e.to_string())?;
+                        let mut entry_file = entry;
+                        io::copy(&mut entry_file, &mut outfile).map_err(|e| e.to_string())?;
+
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            if let Ok(meta) = fs::metadata(&dest_path) {
+                                let mut perms = meta.permissions();
+                                perms.set_mode(0o755);
+                                let _ = fs::set_permissions(&dest_path, perms);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     let _ = fs::remove_file(archive_path);
     Ok(())
 }

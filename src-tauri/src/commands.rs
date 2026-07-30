@@ -4,11 +4,10 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
-use tauri_plugin_opener::OpenerExt;
 
 #[derive(Clone, Serialize)]
 pub struct DownloadProgressPayload {
@@ -51,15 +50,29 @@ pub async fn check_and_prepare_binaries(app: AppHandle) -> Result<bool, String> 
         _ => return Err("Unsupported Operating System".into()),
     };
 
+    // 1. Download yt-dlp binary if missing
     bin_manager::download_file(&app, ytdlp_url, ytdlp_name).await?;
 
+    // 2. Resolve or preparation for FFmpeg
     let bin_dir = get_binaries_dir(&app)?;
     let ffmpeg_exe = if cfg!(target_os = "windows") { "ffmpeg.exe" } else { "ffmpeg" };
 
-    if !bin_dir.join(ffmpeg_exe).exists() && target_os == "windows" {
-        let ffmpeg_url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip";
-        let zip_path = bin_manager::download_file(&app, ffmpeg_url, "ffmpeg.zip").await?;
-        bin_manager::extract_ffmpeg_zip(&zip_path, &bin_dir)?;
+    // Check if system ffmpeg exists on Linux/macOS before downloading
+    if !bin_dir.join(ffmpeg_exe).exists() {
+        if target_os == "windows" {
+            let ffmpeg_url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip";
+            let zip_path = bin_manager::download_file(&app, ffmpeg_url, "ffmpeg.zip").await?;
+            bin_manager::extract_ffmpeg_zip(&zip_path, &bin_dir)?;
+        } else if target_os == "linux" {
+            // Check if user has system ffmpeg installed via pacman/apt first
+            if std::process::Command::new("ffmpeg").arg("-version").output().is_err() {
+                // Download static Linux x86_64 FFmpeg binary tarball
+                let ffmpeg_url = "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz";
+                let tar_path = bin_manager::download_file(&app, ffmpeg_url, "ffmpeg.tar.xz").await?;
+                // Extract static binary
+                bin_manager::extract_ffmpeg_tar_xz(&tar_path, &bin_dir)?;
+            }
+        }
     }
 
     Ok(true)
@@ -94,27 +107,74 @@ pub async fn start_download(
     url: String,
     format_id: String,
     output_dir: String,
-    container: String, // Accepts "mp4", "mkv", "webm"
+    container: String,
     state: State<'_, DownloadManager>,
 ) -> Result<(), String> {
     let bin_dir = get_binaries_dir(&app)?;
     let ytdlp_name = if cfg!(target_os = "windows") { "yt-dlp.exe" } else { "yt-dlp" };
     let ytdlp_path = bin_dir.join(ytdlp_name);
 
-    let output_template = format!("{}/%(title)s.%(ext)s", output_dir);
+    // 1. Robust multi-level path resolution for Linux/Windows
+    let safe_dir = if !output_dir.trim().is_empty() {
+        std::path::PathBuf::from(output_dir)
+    } else {
+        // Try Tauri path resolver first
+        app.path().download_dir().unwrap_or_else(|_| {
+            // Fallback: Build $HOME/Downloads directly on Linux/macOS
+            if let Ok(home) = std::env::var("HOME") {
+                let user_downloads = std::path::PathBuf::from(home).join("Downloads");
+                if user_downloads.exists() {
+                    return user_downloads;
+                }
+            }
+            std::path::PathBuf::from("/tmp")
+        })
+    };
+
+    // Ensure destination directory exists
+    if !safe_dir.exists() {
+        let _ = std::fs::create_dir_all(&safe_dir);
+    }
+
+    let target_container = if container.trim().is_empty() {
+        "mp4".to_string()
+    } else {
+        container.trim().to_lowercase()
+    };
+
+    let output_template = safe_dir.join("%(title)s.%(ext)s").to_string_lossy().to_string();
+
+    println!("--------------------------------------------------");
+    println!("🚀 [MeowLoad] Downloading to: {}", safe_dir.display());
+    println!("--------------------------------------------------");
+
+    // 2. Resolve FFmpeg
+    let ffmpeg_name = if cfg!(target_os = "windows") { "ffmpeg.exe" } else { "ffmpeg" };
+    let local_ffmpeg = bin_dir.join(ffmpeg_name);
+
+    let mut args = vec![
+        "-f".to_string(),
+        if format_id.trim().is_empty() { "bestvideo+bestaudio/best".to_string() } else { format_id },
+        "-o".to_string(),
+        output_template,
+        "--merge-output-format".to_string(),
+        target_container,
+        "--newline".to_string(),
+        "--progress-template".to_string(),
+        "download:MEOW_PROGRESS:%(progress.downloaded_bytes)s|%(progress.total_bytes,progress.total_bytes_estimate)s|%(progress.speed)s|%(progress.eta)s".to_string(),
+    ];
+
+    if local_ffmpeg.exists() {
+        args.push("--ffmpeg-location".to_string());
+        args.push(bin_dir.to_str().unwrap_or_default().to_string());
+    }
+
+    args.push(url);
 
     let mut cmd = Command::new(&ytdlp_path);
-    cmd.args([
-        "-f", &format_id,
-        "-o", &output_template,
-        "--merge-output-format", &container, // Forces output container (mp4/mkv)
-        "--ffmpeg-location", bin_dir.to_str().unwrap_or_default(),
-        "--newline",
-        "--progress-template", "download:MEOW_PROGRESS:%(progress.downloaded_bytes)s|%(progress.total_bytes,progress.total_bytes_estimate)s|%(progress.speed)s|%(progress.eta)s",
-        &url
-    ])
-    .stdout(Stdio::piped())
-    .stderr(Stdio::piped());
+    cmd.args(&args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
 
     let mut child = cmd.spawn().map_err(|e| e.to_string())?;
     let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
@@ -143,17 +203,8 @@ pub async fn start_download(
                     let total: f32 = parts[1].parse().unwrap_or(0.0);
                     let percentage = if total > 0.0 { (downloaded / total) * 100.0 } else { 0.0 };
 
-                    let speed = if parts[2] != "NA" && !parts[2].is_empty() {
-                        parts[2].to_string()
-                    } else {
-                        "N/A".into()
-                    };
-
-                    let eta = if parts[3] != "NA" && !parts[3].is_empty() {
-                        parts[3].to_string()
-                    } else {
-                        "--:--".into()
-                    };
+                    let speed = if parts[2] != "NA" && !parts[2].is_empty() { parts[2].to_string() } else { "N/A".into() };
+                    let eta = if parts[3] != "NA" && !parts[3].is_empty() { parts[3].to_string() } else { "--:--".into() };
 
                     let _ = app.emit(
                         "download_progress",
@@ -166,6 +217,8 @@ pub async fn start_download(
                         },
                     );
                 }
+            } else if !line_str.is_empty() {
+                println!("[yt-dlp]: {}", line_str);
             }
         }
 
@@ -213,8 +266,67 @@ pub async fn cancel_download(
 
 #[tauri::command]
 pub async fn open_file_location(app: AppHandle, path: String) -> Result<(), String> {
-    app.opener()
-        .open_path(path, None::<&str>)
-        .map_err(|e| e.to_string())?;
+    // 1. Resolve target path gracefully
+    let target_path = if path.trim().is_empty() {
+        app.path()
+            .download_dir()
+            .unwrap_or_else(|_| {
+                if let Ok(home) = std::env::var("HOME") {
+                    std::path::PathBuf::from(home).join("Downloads")
+                } else {
+                    std::path::PathBuf::from("/tmp")
+                }
+            })
+    } else {
+        std::path::PathBuf::from(path)
+    };
+
+    // Ensure directory exists
+    if !target_path.exists() {
+        let _ = std::fs::create_dir_all(&target_path);
+    }
+
+    let path_str = target_path.to_string_lossy().to_string();
+
+    // 2. Windows / macOS / Standard Desktop Linux (Tauri 2 Native Opener)
+    #[cfg(not(target_os = "linux"))]
+    {
+        use tauri_plugin_opener::OpenerExt;
+        app.opener()
+            .open_path(&path_str, None::<&str>)
+            .map_err(|e| e.to_string())?;
+    }
+
+    // 3. Linux Implementation
+    #[cfg(target_os = "linux")]
+    {
+        use tauri_plugin_opener::OpenerExt;
+
+        // Try Tauri's native opener plugin first (uses xdg-open internally)
+        if app.opener().open_path(&path_str, None::<&str>).is_err() {
+            // Fallback for minimal window manager setups (Hyprland / Sway / i3)
+            let fallback_managers = ["xdg-open", "dolphin", "thunar", "nautilus", "pcmanfm", "nemo"];
+            let mut launched = false;
+
+            for cmd in fallback_managers {
+                if std::process::Command::new(cmd)
+                    .arg(&path_str)
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .spawn()
+                    .is_ok()
+                {
+                    launched = true;
+                    break;
+                }
+            }
+
+            if !launched {
+                return Err("Failed to open file location on Linux".into());
+            }
+        }
+    }
+
     Ok(())
 }

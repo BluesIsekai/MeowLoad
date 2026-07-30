@@ -1,140 +1,138 @@
-// src/App.tsx
-import { useState } from 'react';
-import { downloadDir } from '@tauri-apps/api/path';
-import { Sidebar } from './components/Sidebar';
-import { BinaryInstaller } from './components/BinaryInstaller';
-import { URLInput } from './components/URLInput';
-import { ActiveDownloadCard } from './components/ActiveDownloadCard';
-import { InspectedMediaCard } from './components/InspectedMediaCard';
-import { useDownloader } from './hooks/useDownloader';
+import React, { useState, useEffect } from "react";
+import { downloadDir } from "@tauri-apps/api/path";
+import { Sidebar } from "./components/Sidebar";
+import { BinaryInstaller } from "./components/BinaryInstaller";
+import { URLInput } from "./components/URLInput";
+import { ActiveDownloadCard } from "./components/ActiveDownloadCard";
+import { InspectedMediaCard } from "./components/InspectedMediaCard";
+import { useDownloader } from "./hooks/useDownloader";
 
 export function App() {
-  const [isBinaryReady, setIsBinaryReady] = useState(false);
-  const [isFetching, setIsFetching] = useState(false);
-  const [inspectedMedia, setInspectedMedia] = useState<{ id: string; url: string; data: any } | null>(null);
+    const [isBinaryReady, setIsBinaryReady] = useState(false);
+    const [isFetching, setIsFetching] = useState(false);
+    const [inspectedMedia, setInspectedMedia] = useState<{ id: string; url: string; data: any } | null>(null);
+    const [defaultOutputDir, setDefaultOutputDir] = useState<string>("");
 
-  const { fetchInfo, startDownload, cancelDownload, openFolder, progress, isDownloading } = useDownloader();
+    const { fetchInfo, startDownload, cancelDownload, openFolder, progress, isDownloading } = useDownloader();
 
-  // Show binary setup banner if dependencies are missing
-  if (!isBinaryReady) {
-    return <BinaryInstaller onReady={() => setIsBinaryReady(true)} />;
-  }
+    // Resolve system downloads directory on mount safely
+    useEffect(() => {
+        downloadDir()
+            .then(dir => setDefaultOutputDir(dir || ""))
+            .catch(err => console.error("Could not fetch downloads folder:", err));
+    }, []);
 
-  const handleInspectURL = async (url: string) => {
-    setIsFetching(true);
-    try {
-      const data = await fetchInfo(url);
-      const id = Date.now().toString();
-      setInspectedMedia({ id, url, data });
-    } catch (err) {
-      alert(`Error fetching URL metadata: ${err}`);
-    } finally {
-      setIsFetching(false);
+    // Show binary setup banner until yt-dlp & FFmpeg are verified
+    if (!isBinaryReady) {
+        return <BinaryInstaller onReady={() => setIsBinaryReady(true)} />;
     }
-  };
 
-  // ✅ Resolve system downloads directory path dynamically
-  const handleOpenDownloadsFolder = async () => {
-    try {
-      const dir = await downloadDir();
-      await openFolder(dir);
-    } catch (err) {
-      console.error('Failed to open downloads folder:', err);
-    }
-  };
+    const handleInspectURL = async (url: string) => {
+        setIsFetching(true);
+        try {
+            const data = await fetchInfo(url);
+            const id = Date.now().toString();
+            setInspectedMedia({ id, url, data });
+        } catch (err) {
+            alert(`Error fetching URL metadata: ${err}`);
+        } finally {
+            setIsFetching(false);
+        }
+    };
 
-  return (
-    <div className="bg-background text-on-background min-h-screen flex font-body-md selection:bg-primary-container selection:text-on-primary-container overflow-hidden">
-      <Sidebar />
+    const handleOpenDownloadsFolder = async () => {
+        try {
+            // Falls back to ~/Downloads if defaultOutputDir is not yet populated
+            const dir = defaultOutputDir || "";
+            await openFolder(dir);
+        } catch (err) {
+            console.error("Failed to open downloads folder:", err);
+        }
+    };
 
-      <main className="ml-sidebar-width flex-1 flex flex-col h-screen overflow-hidden relative">
-        {/* Header */}
-        <header className="bg-surface/80 backdrop-blur-md sticky top-0 z-30 flex justify-between items-center w-full px-lg py-md border-b border-surface-variant/50">
-          <nav className="flex gap-lg">
-            <a href="#" className="font-label-md text-label-md text-primary border-b-2 border-primary pb-1 transition-colors">
-              Queue
-            </a>
-            <a href="#" className="font-label-md text-label-md text-on-surface-variant hover:text-primary transition-colors">
-              Completed
-            </a>
-            <a href="#" className="font-label-md text-label-md text-on-surface-variant hover:text-primary transition-colors">
-              Failed
-            </a>
-          </nav>
+    return (
+        <div className="bg-[#13131b] text-[#e4e1ed] min-h-screen flex font-sans overflow-hidden">
+            <Sidebar />
 
-          <div className="flex items-center gap-md">
-            <button
-              onClick={handleOpenDownloadsFolder}
-              className="flex items-center gap-xs text-on-surface-variant hover:text-primary transition-colors font-label-md text-label-md"
-            >
-              <span className="material-symbols-outlined text-lg">folder_open</span>
-              Open Folder
-            </button>
-            <div className="w-px h-6 bg-surface-variant mx-2"></div>
-            <button className="p-2 rounded-full hover:bg-surface-container transition-colors text-on-surface-variant hover:text-primary scale-95 active:scale-90 transition-transform">
-              <span className="material-symbols-outlined">settings</span>
-            </button>
-            <button className="p-2 rounded-full hover:bg-surface-container transition-colors text-on-surface-variant hover:text-primary scale-95 active:scale-90 transition-transform">
-              <span className="material-symbols-outlined">more_vert</span>
-            </button>
-          </div>
-        </header>
+            <main className="ml-64 flex-1 flex flex-col h-screen overflow-hidden relative">
+                {/* Header Bar */}
+                <header className="bg-[#13131b]/80 backdrop-blur-md sticky top-0 z-30 flex justify-between items-center w-full px-6 py-4 border-b border-[#34343d]">
+                    <nav className="flex gap-6">
+                        <a href="#" className="text-sm font-medium text-[#c0c1ff] border-b-2 border-[#c0c1ff] pb-1">
+                            Queue
+                        </a>
+                        <a href="#" className="text-sm font-medium text-[#c7c4d7] hover:text-[#c0c1ff]">
+                            Completed
+                        </a>
+                    </nav>
 
-        {/* Scrollable Body Canvas */}
-        <div className="flex-1 overflow-y-auto p-lg">
-          <div className="max-w-container-max mx-auto space-y-xl">
-            <URLInput onInspect={handleInspectURL} isLoading={isFetching} />
+                    <div className="flex items-center gap-4">
+                        <button
+                            onClick={handleOpenDownloadsFolder}
+                            className="flex items-center gap-1 text-xs text-[#c7c4d7] hover:text-[#c0c1ff] transition-colors"
+                        >
+                            <span className="material-symbols-outlined text-base">folder_open</span>
+                            Open Downloads Folder
+                        </button>
+                    </div>
+                </header>
 
-            <div className="grid grid-cols-1 xl:grid-cols-12 gap-lg">
-              {/* Left Column: Active Download List */}
-              <div className="xl:col-span-8 space-y-sm">
-                <h2 className="font-headline-md text-headline-md text-on-surface mb-md">Active Downloads</h2>
+                {/* Scrollable Main Content */}
+                <div className="flex-1 overflow-y-auto p-6">
+                    <div className="max-w-6xl mx-auto space-y-6">
+                        <URLInput onInspect={handleInspectURL} isLoading={isFetching} />
 
-                {isDownloading && inspectedMedia ? (
-                  <ActiveDownloadCard
-                    id={inspectedMedia.id}
-                    title={inspectedMedia.data.title}
-                    thumbnail={inspectedMedia.data.thumbnail}
-                    progress={progress}
-                    onCancel={cancelDownload}
-                    onOpenFolder={handleOpenDownloadsFolder}
-                    outputDir=""
-                  />
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-16 bg-[#18181B] border border-[#27272A] rounded-xl text-on-surface-variant">
-                    <span className="material-symbols-outlined text-5xl mb-2 text-surface-variant">
-                      downloading
-                    </span>
-                    <p className="font-body-md text-body-md">No active downloads right now</p>
-                  </div>
-                )}
-              </div>
+                        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+                            {/* Left Column: Active Downloads */}
+                            <div className="xl:col-span-8 space-y-4">
+                                <h2 className="text-lg font-semibold text-[#e4e1ed]">Active Downloads</h2>
 
-              {/* Right Column: URL Inspection Panel */}
-              <div className="xl:col-span-4">
-                <h2 className="font-headline-md text-headline-md text-on-surface mb-md opacity-0">Ready</h2>
-                {inspectedMedia ? (
-                  <InspectedMediaCard
-                    id={inspectedMedia.id}
-                    url={inspectedMedia.url}
-                    metadata={inspectedMedia.data}
-                    onStartDownload={startDownload}
-                  />
-                ) : (
-                  <div className="bg-[#18181B] border border-[#27272A] rounded-xl p-md text-center text-on-surface-variant sticky top-4">
-                    <span className="material-symbols-outlined text-4xl mb-2 text-surface-variant">
-                      link
-                    </span>
-                    <p className="font-label-sm text-label-sm">Paste and inspect a URL above to choose formats</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+                                {isDownloading && inspectedMedia ? (
+                                    <ActiveDownloadCard
+                                        id={inspectedMedia.id}
+                                        title={inspectedMedia.data?.title || "Downloading media..."}
+                                        thumbnail={inspectedMedia.data?.thumbnail || ""}
+                                        progress={progress}
+                                        onCancel={cancelDownload}
+                                        onOpenFolder={handleOpenDownloadsFolder}
+                                        outputDir={defaultOutputDir}
+                                    />
+                                ) : (
+                                    <div className="flex flex-col items-center justify-center py-16 bg-[#18181B] border border-[#27272A] rounded-xl text-[#c7c4d7]">
+                                        <span className="material-symbols-outlined text-5xl mb-2 text-[#34343d]">
+                                            downloading
+                                        </span>
+                                        <p className="text-sm">No active downloads right now</p>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Right Column: URL Inspection Panel */}
+                            <div className="xl:col-span-4">
+                                {inspectedMedia ? (
+                                    <InspectedMediaCard
+                                        id={inspectedMedia.id}
+                                        url={inspectedMedia.url}
+                                        metadata={inspectedMedia.data}
+                                        onStartDownload={(id, url, formatId, container) =>
+                                            startDownload(id, url, formatId, defaultOutputDir, container)
+                                        }
+                                    />
+                                ) : (
+                                    <div className="bg-[#18181B] border border-[#27272A] rounded-xl p-6 text-center text-[#c7c4d7]">
+                                        <span className="material-symbols-outlined text-4xl mb-2 text-[#34343d]">
+                                            link
+                                        </span>
+                                        <p className="text-xs">Paste and inspect a URL above to choose formats</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
         </div>
-      </main>
-    </div>
-  );
+    );
 }
 
 export default App;

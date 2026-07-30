@@ -2200,6 +2200,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-opener",
  "tokio",
+ "xz2",
  "zip",
 ]
 
