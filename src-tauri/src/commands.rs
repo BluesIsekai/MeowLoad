@@ -147,10 +147,16 @@ pub async fn start_download(
     let ffmpeg_name = if cfg!(target_os = "windows") { "ffmpeg.exe" } else { "ffmpeg" };
     let local_ffmpeg = bin_dir.join(ffmpeg_name);
 
-    let (clean_format_id, audio_quality) = if let Some((fmt, qual)) = format_id.split_once(':') {
+    let (format_and_audio, sub_spec) = if let Some((base, sub_part)) = format_id.split_once("|sub:") {
+        (base, Some(sub_part))
+    } else {
+        (format_id.as_str(), None)
+    };
+
+    let (clean_format_id, audio_quality) = if let Some((fmt, qual)) = format_and_audio.split_once(':') {
         (fmt.to_string(), Some(qual.to_string()))
     } else {
-        (format_id, None)
+        (format_and_audio.to_string(), None)
     };
 
     let format_val = clean_format_id.trim();
@@ -170,6 +176,20 @@ pub async fn start_download(
         output_template,
     ];
 
+    if let Some(sub_str) = sub_spec {
+        let (sub_mode, sub_lang) = sub_str.split_once(':').unwrap_or((sub_str, "en"));
+        args.push("--write-subs".to_string());
+        args.push("--write-auto-subs".to_string());
+        args.push("--sub-langs".to_string());
+        args.push(sub_lang.to_string());
+        args.push("--convert-subs".to_string());
+        args.push("srt".to_string());
+
+        if sub_mode == "embed" {
+            args.push("--embed-subs".to_string());
+        }
+    }
+
     // 3. Audio Extraction vs. Video Merging Flags
     if is_audio_only {
         args.push("-x".to_string()); // Extract audio track
@@ -187,6 +207,8 @@ pub async fn start_download(
     args.push("--newline".to_string());
     args.push("--progress-template".to_string());
     args.push("download:MEOW_PROGRESS:%(progress.downloaded_bytes)s|%(progress.total_bytes,progress.total_bytes_estimate)s|%(progress.speed)s|%(progress.eta)s".to_string());
+    args.push("--progress-template".to_string());
+    args.push("postprocess:MEOW_PROGRESS:%(progress.downloaded_bytes)s|%(progress.total_bytes,progress.total_bytes_estimate)s|%(progress.speed)s|%(progress.eta)s".to_string());
 
     if local_ffmpeg.exists() {
         args.push("--ffmpeg-location".to_string());

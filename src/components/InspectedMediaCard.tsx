@@ -44,6 +44,9 @@ export const InspectedMediaCard: React.FC<InspectedMediaCardProps> = ({
   const [audioQuality, setAudioQuality] = useState<string>('0');
   const [videoContainer, setVideoContainer] = useState<string>('mp4');
   const [audioContainer, setAudioContainer] = useState<string>('mp3');
+  const [downloadSubtitles, setDownloadSubtitles] = useState<boolean>(false);
+  const [subtitleMode, setSubtitleMode] = useState<'embed' | 'file'>('embed');
+  const [subtitleLang, setSubtitleLang] = useState<string>('en');
   const [outputDir, setOutputDir] = useState<string>('');
 
   useEffect(() => {
@@ -76,6 +79,10 @@ export const InspectedMediaCard: React.FC<InspectedMediaCardProps> = ({
         formatSpecifier = `${selectedResolution}+bestaudio/best`;
       }
       targetContainer = videoContainer || 'mp4';
+
+      if (downloadSubtitles) {
+        formatSpecifier = `${formatSpecifier}|sub:${subtitleMode}:${subtitleLang}`;
+      }
     }
 
     onStartDownload(id, url, formatSpecifier, outputDir, targetContainer);
@@ -220,6 +227,53 @@ export const InspectedMediaCard: React.FC<InspectedMediaCardProps> = ({
                 <option value="mkv">MKV (Matroska)</option>
                 <option value="webm">WebM</option>
               </select>
+            </div>
+
+            {/* Subtitles Option */}
+            <div className="pt-1">
+              <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-[#c7c4d7] hover:text-[#e4e1ed] transition-colors">
+                <input
+                  type="checkbox"
+                  checked={downloadSubtitles}
+                  onChange={(e) => setDownloadSubtitles(e.target.checked)}
+                  className="w-4 h-4 rounded bg-[#27272A] border-[#34343d] text-[#6366F1] focus:ring-[#6366F1] focus:ring-offset-0 transition-colors cursor-pointer"
+                />
+                <span>Download Subtitles</span>
+              </label>
+
+              {downloadSubtitles && (
+                <div className="mt-2.5 p-2.5 bg-[#1f1f27] border border-[#27272A] rounded-lg space-y-2.5">
+                  {/* Output Type */}
+                  <div>
+                    <label className="block text-[11px] font-medium text-[#c7c4d7] mb-1">Output Type</label>
+                    <select
+                      value={subtitleMode}
+                      onChange={(e) => setSubtitleMode(e.target.value as 'embed' | 'file')}
+                      className="w-full bg-[#27272A] border border-[#34343d] rounded-lg px-3 py-1.5 text-xs text-[#e4e1ed] focus:ring-1 focus:ring-[#6366F1] focus:border-[#6366F1] focus:outline-none transition-colors"
+                    >
+                      <option value="embed">Embed in Video</option>
+                      <option value="file">Save as Separate File</option>
+                    </select>
+                  </div>
+
+                  {/* Subtitle Language */}
+                  <div>
+                    <label className="block text-[11px] font-medium text-[#c7c4d7] mb-1">Language</label>
+                    <select
+                      value={subtitleLang}
+                      onChange={(e) => setSubtitleLang(e.target.value)}
+                      className="w-full bg-[#27272A] border border-[#34343d] rounded-lg px-3 py-1.5 text-xs text-[#e4e1ed] focus:ring-1 focus:ring-[#6366F1] focus:border-[#6366F1] focus:outline-none transition-colors"
+                    >
+                      <option value="en">English</option>
+                      <option value="es">Spanish</option>
+                      <option value="ja">Japanese</option>
+                      <option value="fr">French</option>
+                      <option value="de">German</option>
+                      <option value="all">All</option>
+                    </select>
+                  </div>
+                </div>
+              )}
             </div>
           </>
         ) : (
