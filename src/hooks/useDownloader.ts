@@ -10,21 +10,62 @@ export interface ProgressData {
   status: 'downloading' | 'finished' | 'error';
 }
 
+export interface DownloadItem {
+  id: string;
+  url: string;
+  title: string;
+  thumbnail: string;
+  outputDir: string;
+  date: string;
+  status: 'downloading' | 'finished' | 'error';
+  progress?: ProgressData;
+}
+
+const STORAGE_KEY = 'meowload_download_history';
+
 export function useDownloader() {
-  const [progress, setProgress] = useState<ProgressData | null>(null);
-  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloads, setDownloads] = useState<DownloadItem[]>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored) as DownloadItem[];
+        // Any previously downloading items that are loaded from storage are marked as error since they were interrupted
+        return parsed.map(item => ({
+          ...item,
+          status: item.status === 'downloading' ? 'error' : item.status
+        }));
+      }
+    } catch (e) {
+      console.error('Failed to parse download history from localStorage', e);
+    }
+    return [];
+  });
+
+  // Derived state to keep backward compatibility with progress
+  const activeDownload = downloads.find(d => d.status === 'downloading');
+  const progress = activeDownload?.progress || null;
+  const isDownloading = !!activeDownload;
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(downloads));
+  }, [downloads]);
 
   useEffect(() => {
     let unlisten: UnlistenFn;
 
     listen<ProgressData>('download_progress', (event) => {
-      setProgress(event.payload);
-
-      if (event.payload.status === 'finished' || event.payload.status === 'error') {
-        setIsDownloading(false);
-      } else {
-        setIsDownloading(true);
-      }
+      setDownloads(prev => {
+        return prev.map(item => {
+          if (item.id === event.payload.id) {
+            return {
+              ...item,
+              status: event.payload.status,
+              progress: event.payload
+            };
+          }
+          return item;
+        });
+      });
     }).then((fn) => (unlisten = fn));
 
     return () => {
@@ -41,10 +82,22 @@ export function useDownloader() {
     url: string,
     formatId: string,
     outputDir: string,
-    container: string = 'mp4'
+    container: string = 'mp4',
+    title: string = 'Unknown Title',
+    thumbnail: string = ''
   ) => {
-    setIsDownloading(true);
-    setProgress({ id, percentage: 0, speed: 'Starting...', eta: '--:--', status: 'downloading' });
+    const newItem: DownloadItem = {
+      id,
+      url,
+      title,
+      thumbnail,
+      outputDir,
+      date: new Date().toLocaleString(),
+      status: 'downloading',
+      progress: { id, percentage: 0, speed: 'Starting...', eta: '--:--', status: 'downloading' }
+    };
+    
+    setDownloads(prev => [newItem, ...prev]);
 
     // Fallbacks to prevent passing empty strings to Rust IPC
     const safeFormatId = formatId || 'bestvideo+bestaudio/best';
@@ -59,7 +112,9 @@ export function useDownloader() {
         container: safeContainer,
       });
     } catch (err) {
-      setIsDownloading(false);
+      setDownloads(prev => prev.map(item => 
+        item.id === id ? { ...item, status: 'error' } : item
+      ));
       alert(`Download error: ${err}`);
     }
   };
@@ -70,9 +125,18 @@ export function useDownloader() {
     } catch (err) {
       console.error('Failed to cancel download:', err);
     } finally {
-      setIsDownloading(false);
-      setProgress(null);
+      setDownloads(prev => prev.map(item => 
+        item.id === id ? { ...item, status: 'error' } : item
+      ));
     }
+  };
+
+  const removeDownload = (id: string) => {
+    setDownloads(prev => prev.filter(item => item.id !== id));
+  };
+
+  const clearFinished = () => {
+    setDownloads(prev => prev.filter(item => item.status === 'downloading'));
   };
 
   const openFolder = async (path: string) => {
@@ -83,5 +147,15 @@ export function useDownloader() {
     }
   };
 
-  return { fetchInfo, startDownload, cancelDownload, openFolder, progress, isDownloading };
+  return { 
+    fetchInfo, 
+    startDownload, 
+    cancelDownload, 
+    removeDownload, 
+    clearFinished,
+    openFolder, 
+    downloads,
+    progress, 
+    isDownloading 
+  };
 }

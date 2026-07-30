@@ -136,7 +136,7 @@ pub async fn start_download(
         let _ = std::fs::create_dir_all(&safe_dir);
     }
 
-    let target_container = if container.trim().is_empty() {
+    let target_container = if container.trim().is_empty() || container.contains('/') || container.contains('\\') {
         "mp4".to_string()
     } else {
         container.trim().to_lowercase()
