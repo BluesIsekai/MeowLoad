@@ -1,16 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { downloadDir } from '@tauri-apps/api/path';
 
-interface Format {
+export interface Format {
   format_id: string;
   ext: string;
   resolution?: string;
   vcodec?: string;
   acodec?: string;
   height?: number;
+  width?: number;
+  fps?: number;
+  filesize?: number;
+  filesize_approx?: number;
 }
 
-interface InspectedMediaCardProps {
+export interface InspectedMediaCardProps {
   id: string;
   url: string;
   metadata: {
@@ -35,16 +39,10 @@ export const InspectedMediaCard: React.FC<InspectedMediaCardProps> = ({
   metadata,
   onStartDownload,
 }) => {
-  // Deduplicate format resolutions by height (keep non-storyboard video formats)
-  const validFormats = (metadata.formats || []).filter(
-    (fmt) => fmt.height && fmt.vcodec !== 'none'
-  );
-  const uniqueResolutions = Array.from(
-    new Map(validFormats.map((item) => [item.height, item])).values()
-  ).sort((a, b) => (b.height || 0) - (a.height || 0));
-
+  const [downloadType, setDownloadType] = useState<'video' | 'audio'>('video');
   const [selectedResolution, setSelectedResolution] = useState<string>('best');
-  const [container, setContainer] = useState<string>('mp4');
+  const [videoContainer, setVideoContainer] = useState<string>('mp4');
+  const [audioContainer, setAudioContainer] = useState<string>('mp3');
   const [outputDir, setOutputDir] = useState<string>('');
 
   useEffect(() => {
@@ -53,93 +51,226 @@ export const InspectedMediaCard: React.FC<InspectedMediaCardProps> = ({
       .catch((err) => console.error('Failed to resolve download directory:', err));
   }, []);
 
+  // Filter out storyboards, images, and non-video formats
+  const validFormats = (metadata?.formats || []).filter(
+    (fmt) => fmt.height && fmt.vcodec && fmt.vcodec !== 'none' && !fmt.format_id.startsWith('sb')
+  );
+
+  // Deduplicate format resolutions by height (keep highest quality format per height)
+  const uniqueResolutions = Array.from(
+    new Map(validFormats.map((item) => [item.height, item])).values()
+  ).sort((a, b) => (b.height || 0) - (a.height || 0));
+
   const handleDownload = () => {
-    let formatSpecifier = selectedResolution;
-    if (selectedResolution !== 'best' && selectedResolution !== 'bestaudio') {
-      formatSpecifier = `${selectedResolution}+bestaudio/best`;
-    } else if (selectedResolution === 'best') {
-      formatSpecifier = 'bestvideo+bestaudio/best';
+    let formatSpecifier: string;
+    let targetContainer: string;
+
+    if (downloadType === 'audio' || selectedResolution === 'bestaudio') {
+      formatSpecifier = 'bestaudio/best';
+      targetContainer = audioContainer || 'mp3';
+    } else {
+      if (selectedResolution === 'best') {
+        formatSpecifier = 'bestvideo+bestaudio/best';
+      } else {
+        formatSpecifier = `${selectedResolution}+bestaudio/best`;
+      }
+      targetContainer = videoContainer || 'mp4';
     }
 
-    const targetContainer = container || 'mp4';
     onStartDownload(id, url, formatSpecifier, outputDir, targetContainer);
   };
 
   const formatTime = (secs: number) => {
     if (!secs) return '0:00';
-    const mins = Math.floor(secs / 60);
-    const remainingSecs = String(secs % 60).padStart(2, '0');
+    const hrs = Math.floor(secs / 3600);
+    const mins = Math.floor((secs % 3600) / 60);
+    const remainingSecs = String(Math.floor(secs % 60)).padStart(2, '0');
+    if (hrs > 0) {
+      return `${hrs}:${String(mins).padStart(2, '0')}:${remainingSecs}`;
+    }
     return `${mins}:${remainingSecs}`;
   };
 
+  const handleQualityChange = (val: string) => {
+    if (val === 'bestaudio') {
+      setDownloadType('audio');
+      setSelectedResolution('bestaudio');
+    } else {
+      setDownloadType('video');
+      setSelectedResolution(val);
+    }
+  };
+
+  const handleModeSwitch = (mode: 'video' | 'audio') => {
+    setDownloadType(mode);
+    if (mode === 'audio') {
+      setSelectedResolution('bestaudio');
+    } else if (selectedResolution === 'bestaudio') {
+      setSelectedResolution('best');
+    }
+  };
+
   return (
-    <div className="bg-[#18181B] border border-[#27272A] rounded-xl p-4 sticky top-4 text-[#e4e1ed]">
+    <div className="bg-[#18181B] border border-[#27272A] rounded-xl p-4 sticky top-4 text-[#e4e1ed] shadow-lg">
       {/* Inspected Status Badge */}
-      <div className="flex items-center gap-2 mb-4 pb-4 border-b border-[#27272A]">
-        <span className="material-symbols-outlined text-[#00a572]">check_circle</span>
-        <span className="text-sm font-medium text-[#e4e1ed]">URL Inspected</span>
+      <div className="flex items-center justify-between mb-4 pb-3 border-b border-[#27272A]">
+        <div className="flex items-center gap-2">
+          <span className="material-symbols-outlined text-[#00a572] text-lg">check_circle</span>
+          <span className="text-xs font-semibold text-[#e4e1ed] tracking-wide uppercase">URL Inspected</span>
+        </div>
+        <span className="text-[10px] bg-[#27272A] text-[#c7c4d7] px-2 py-0.5 rounded-full font-mono">
+          Ready
+        </span>
       </div>
 
       {/* Thumbnail Container */}
       <div className="w-full aspect-video bg-[#1f1f27] rounded-lg overflow-hidden mb-4 relative border border-[#27272A]">
-        <img
-          src={metadata.thumbnail}
-          alt={metadata.title}
-          className="w-full h-full object-cover"
-        />
-        <div className="absolute bottom-2 right-2 bg-black/80 px-2 py-0.5 rounded text-xs font-mono text-white">
-          {formatTime(metadata.duration)}
-        </div>
+        {metadata.thumbnail ? (
+          <img
+            src={metadata.thumbnail}
+            alt={metadata.title}
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-[#34343d]">
+            <span className="material-symbols-outlined text-4xl">movie</span>
+          </div>
+        )}
+        {metadata.duration > 0 && (
+          <div className="absolute bottom-2 right-2 bg-black/80 backdrop-blur-sm px-2 py-0.5 rounded text-xs font-mono text-white border border-white/10">
+            {formatTime(metadata.duration)}
+          </div>
+        )}
       </div>
 
       {/* Title & Uploader */}
-      <h3 className="text-sm font-semibold text-[#e4e1ed] mb-1 line-clamp-2">
+      <h3 className="text-sm font-semibold text-[#e4e1ed] mb-1 line-clamp-2 leading-snug" title={metadata.title}>
         {metadata.title}
       </h3>
-      <p className="text-xs text-[#c7c4d7] mb-6">
-        {metadata.uploader || 'Unknown Creator'}
+      <p className="text-xs text-[#c7c4d7] mb-4 flex items-center gap-1">
+        <span className="material-symbols-outlined text-xs text-[#8f8ca0]">person</span>
+        <span className="truncate">{metadata.uploader || 'Unknown Creator'}</span>
       </p>
 
-      {/* Options */}
-      <div className="space-y-4">
-        <div>
-          <label className="block text-xs text-[#c7c4d7] mb-1">Quality</label>
-          <select
-            value={selectedResolution}
-            onChange={(e) => setSelectedResolution(e.target.value)}
-            className="w-full bg-[#27272A] border border-[#34343d] rounded-lg px-3 py-2 text-xs text-[#e4e1ed] focus:ring-1 focus:ring-[#6366F1] focus:border-[#6366F1] focus:outline-none"
-          >
-            <option value="best">Best Quality (Auto)</option>
-            {uniqueResolutions.map((fmt) => (
-              <option key={fmt.format_id} value={fmt.format_id}>
-                {fmt.height}p ({fmt.resolution || 'HD'})
-              </option>
-            ))}
-            <option value="bestaudio">Audio Only (MP3/M4A)</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-xs text-[#c7c4d7] mb-1">Format Container</label>
-          <select
-            value={container}
-            onChange={(e) => setContainer(e.target.value)}
-            className="w-full bg-[#27272A] border border-[#34343d] rounded-lg px-3 py-2 text-xs text-[#e4e1ed] focus:ring-1 focus:ring-[#6366F1] focus:border-[#6366F1] focus:outline-none"
-          >
-            <option value="mp4">MP4</option>
-            <option value="mkv">MKV</option>
-            <option value="webm">WebM</option>
-          </select>
-        </div>
-
+      {/* Download Mode Tabs (Video / Audio-Only) */}
+      <div className="flex bg-[#27272A] p-1 rounded-lg mb-4 text-xs font-medium border border-[#34343d]">
         <button
-          onClick={handleDownload}
-          className="w-full mt-4 bg-[#00a572] hover:bg-[#008f63] text-[#002113] text-sm font-semibold py-3 rounded-lg flex items-center justify-center gap-2 transition-all shadow-[0_0_15px_rgba(0,165,114,0.2)] hover:shadow-[0_0_20px_rgba(0,165,114,0.4)] active:scale-[0.99]"
+          type="button"
+          onClick={() => handleModeSwitch('video')}
+          className={`flex-1 py-1.5 rounded-md flex items-center justify-center gap-1.5 transition-all ${
+            downloadType === 'video'
+              ? 'bg-[#6366F1] text-white shadow-sm font-semibold'
+              : 'text-[#c7c4d7] hover:text-white'
+          }`}
         >
-          <span className="material-symbols-outlined text-sm">download</span>
+          <span className="material-symbols-outlined text-sm">videocam</span>
+          Video
+        </button>
+        <button
+          type="button"
+          onClick={() => handleModeSwitch('audio')}
+          className={`flex-1 py-1.5 rounded-md flex items-center justify-center gap-1.5 transition-all ${
+            downloadType === 'audio'
+              ? 'bg-[#6366F1] text-white shadow-sm font-semibold'
+              : 'text-[#c7c4d7] hover:text-white'
+          }`}
+        >
+          <span className="material-symbols-outlined text-sm">audiotrack</span>
+          Audio Only
+        </button>
+      </div>
+
+      {/* Options */}
+      <div className="space-y-3">
+        {downloadType === 'video' ? (
+          <>
+            {/* Resolution Selector */}
+            <div>
+              <label className="block text-xs font-medium text-[#c7c4d7] mb-1 flex justify-between items-center">
+                <span>Resolution / Quality</span>
+                {uniqueResolutions.length > 0 && (
+                  <span className="text-[10px] text-[#8f8ca0]">{uniqueResolutions.length} options</span>
+                )}
+              </label>
+              <select
+                value={selectedResolution}
+                onChange={(e) => handleQualityChange(e.target.value)}
+                className="w-full bg-[#27272A] border border-[#34343d] rounded-lg px-3 py-2 text-xs text-[#e4e1ed] focus:ring-1 focus:ring-[#6366F1] focus:border-[#6366F1] focus:outline-none transition-colors"
+              >
+                <option value="best">Best Quality (Auto)</option>
+                {uniqueResolutions.map((fmt) => (
+                  <option key={fmt.format_id} value={fmt.format_id}>
+                    {fmt.height}p {fmt.fps && fmt.fps > 30 ? `(${fmt.fps}fps)` : ''} {fmt.resolution ? `- ${fmt.resolution}` : ''}
+                  </option>
+                ))}
+                <option value="bestaudio">🎵 Audio Only (Extract MP3/M4A)</option>
+              </select>
+            </div>
+
+            {/* Container Selector for Video */}
+            <div>
+              <label className="block text-xs font-medium text-[#c7c4d7] mb-1">Format Container</label>
+              <select
+                value={videoContainer}
+                onChange={(e) => setVideoContainer(e.target.value)}
+                className="w-full bg-[#27272A] border border-[#34343d] rounded-lg px-3 py-2 text-xs text-[#e4e1ed] focus:ring-1 focus:ring-[#6366F1] focus:border-[#6366F1] focus:outline-none transition-colors"
+              >
+                <option value="mp4">MP4 (Default - High Compatibility)</option>
+                <option value="mkv">MKV (Matroska)</option>
+                <option value="webm">WebM</option>
+              </select>
+            </div>
+          </>
+        ) : (
+          <>
+            {/* Audio Quality / Mode */}
+            <div>
+              <label className="block text-xs font-medium text-[#c7c4d7] mb-1">Audio Quality</label>
+              <select
+                value="bestaudio"
+                onChange={(e) => handleQualityChange(e.target.value)}
+                className="w-full bg-[#27272A] border border-[#34343d] rounded-lg px-3 py-2 text-xs text-[#e4e1ed] focus:ring-1 focus:ring-[#6366F1] focus:border-[#6366F1] focus:outline-none transition-colors"
+              >
+                <option value="bestaudio">Best Audio Quality (Auto)</option>
+              </select>
+            </div>
+
+            {/* Audio Format Container Selector */}
+            <div>
+              <label className="block text-xs font-medium text-[#c7c4d7] mb-1">Audio Format</label>
+              <select
+                value={audioContainer}
+                onChange={(e) => setAudioContainer(e.target.value)}
+                className="w-full bg-[#27272A] border border-[#34343d] rounded-lg px-3 py-2 text-xs text-[#e4e1ed] focus:ring-1 focus:ring-[#6366F1] focus:border-[#6366F1] focus:outline-none transition-colors"
+              >
+                <option value="mp3">MP3 (Universal)</option>
+                <option value="m4a">M4A (AAC)</option>
+                <option value="wav">WAV (Lossless)</option>
+                <option value="opus">OPUS</option>
+                <option value="flac">FLAC (Lossless)</option>
+              </select>
+            </div>
+          </>
+        )}
+
+        {/* Output Directory indicator */}
+        {outputDir && (
+          <div className="text-[11px] text-[#8f8ca0] truncate pt-1 flex items-center gap-1" title={outputDir}>
+            <span className="material-symbols-outlined text-xs">folder</span>
+            <span className="truncate">{outputDir}</span>
+          </div>
+        )}
+
+        {/* Start Download Button */}
+        <button
+          type="button"
+          onClick={handleDownload}
+          className="w-full mt-3 bg-[#00a572] hover:bg-[#008f63] text-[#002113] text-sm font-semibold py-2.5 rounded-lg flex items-center justify-center gap-2 transition-all shadow-[0_0_15px_rgba(0,165,114,0.2)] hover:shadow-[0_0_20px_rgba(0,165,114,0.4)] active:scale-[0.99]"
+        >
+          <span className="material-symbols-outlined text-base">download</span>
           Start Download
         </button>
       </div>
     </div>
   );
-};
+};

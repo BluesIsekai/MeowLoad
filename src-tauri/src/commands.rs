@@ -114,24 +114,19 @@ pub async fn start_download(
     let ytdlp_name = if cfg!(target_os = "windows") { "yt-dlp.exe" } else { "yt-dlp" };
     let ytdlp_path = bin_dir.join(ytdlp_name);
 
-    // 1. Robust multi-level path resolution for Linux/Windows
+    // 1. Resolve safe output directory
     let safe_dir = if !output_dir.trim().is_empty() {
         std::path::PathBuf::from(output_dir)
     } else {
-        // Try Tauri path resolver first
         app.path().download_dir().unwrap_or_else(|_| {
-            // Fallback: Build $HOME/Downloads directly on Linux/macOS
             if let Ok(home) = std::env::var("HOME") {
-                let user_downloads = std::path::PathBuf::from(home).join("Downloads");
-                if user_downloads.exists() {
-                    return user_downloads;
-                }
+                std::path::PathBuf::from(home).join("Downloads")
+            } else {
+                std::path::PathBuf::from("C:\\Users\\Public\\Downloads")
             }
-            std::path::PathBuf::from("/tmp")
         })
     };
 
-    // Ensure destination directory exists
     if !safe_dir.exists() {
         let _ = std::fs::create_dir_all(&safe_dir);
     }
@@ -152,22 +147,41 @@ pub async fn start_download(
     let ffmpeg_name = if cfg!(target_os = "windows") { "ffmpeg.exe" } else { "ffmpeg" };
     let local_ffmpeg = bin_dir.join(ffmpeg_name);
 
+    let audio_formats = ["mp3", "m4a", "flac", "wav", "aac", "opus"];
+    let is_audio_only = audio_formats.contains(&target_container.as_str());
+
     let mut args = vec![
         "-f".to_string(),
         if format_id.trim().is_empty() { "bestvideo+bestaudio/best".to_string() } else { format_id },
         "-o".to_string(),
         output_template,
-        "--merge-output-format".to_string(),
-        target_container,
-        "--newline".to_string(),
-        "--progress-template".to_string(),
-        "download:MEOW_PROGRESS:%(progress.downloaded_bytes)s|%(progress.total_bytes,progress.total_bytes_estimate)s|%(progress.speed)s|%(progress.eta)s".to_string(),
     ];
+
+    // 3. Audio Extraction vs. Video Merging Flags
+    if is_audio_only {
+        args.push("-x".to_string()); // Extract audio track
+        args.push("--audio-format".to_string());
+        args.push(target_container);
+    } else {
+        args.push("--merge-output-format".to_string());
+        args.push(target_container);
+    }
+
+    args.push("--newline".to_string());
+    args.push("--progress-template".to_string());
+    args.push("download:MEOW_PROGRESS:%(progress.downloaded_bytes)s|%(progress.total_bytes,progress.total_bytes_estimate)s|%(progress.speed)s|%(progress.eta)s".to_string());
 
     if local_ffmpeg.exists() {
         args.push("--ffmpeg-location".to_string());
         args.push(bin_dir.to_str().unwrap_or_default().to_string());
     }
+
+    args.push("--extractor-args".to_string());
+    args.push("youtube:player_client=ios,web,android".to_string());
+    args.push("--retries".to_string());
+    args.push("10".to_string());
+    args.push("--fragment-retries".to_string());
+    args.push("10".to_string());
 
     args.push(url);
 
