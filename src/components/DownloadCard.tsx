@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { downloadDir } from '@tauri-apps/api/path';
 import { ProgressData } from '../hooks/useDownloader';
+import { formatSpeed, formatEta } from '../utils/formatters';
 
 interface Format {
   format_id: string;
@@ -159,7 +160,7 @@ export const DownloadCard: React.FC<DownloadCardProps> = ({
           <div className="flex justify-between text-xs text-slate-300 mb-1.5 font-medium">
             <span>Downloading... {progress.percentage.toFixed(1)}%</span>
             <span>
-              Speed: {progress.speed} | ETA: {progress.eta}
+              Speed: {formatSpeed(progress.speed)} | ETA: {formatEta(progress.eta)}
             </span>
           </div>
 

@@ -147,12 +147,25 @@ pub async fn start_download(
     let ffmpeg_name = if cfg!(target_os = "windows") { "ffmpeg.exe" } else { "ffmpeg" };
     let local_ffmpeg = bin_dir.join(ffmpeg_name);
 
+    let (clean_format_id, audio_quality) = if let Some((fmt, qual)) = format_id.split_once(':') {
+        (fmt.to_string(), Some(qual.to_string()))
+    } else {
+        (format_id, None)
+    };
+
+    let format_val = clean_format_id.trim();
+    let selected_format = if format_val.is_empty() || format_val == "best" {
+        "bestvideo+bestaudio/best".to_string()
+    } else {
+        clean_format_id
+    };
+
     let audio_formats = ["mp3", "m4a", "flac", "wav", "aac", "opus"];
     let is_audio_only = audio_formats.contains(&target_container.as_str());
 
     let mut args = vec![
         "-f".to_string(),
-        if format_id.trim().is_empty() { "bestvideo+bestaudio/best".to_string() } else { format_id },
+        selected_format,
         "-o".to_string(),
         output_template,
     ];
@@ -162,6 +175,10 @@ pub async fn start_download(
         args.push("-x".to_string()); // Extract audio track
         args.push("--audio-format".to_string());
         args.push(target_container);
+        if let Some(qual) = audio_quality {
+            args.push("--audio-quality".to_string());
+            args.push(qual);
+        }
     } else {
         args.push("--merge-output-format".to_string());
         args.push(target_container);
@@ -173,11 +190,11 @@ pub async fn start_download(
 
     if local_ffmpeg.exists() {
         args.push("--ffmpeg-location".to_string());
-        args.push(bin_dir.to_str().unwrap_or_default().to_string());
+        args.push(bin_dir.to_string_lossy().to_string());
     }
 
     args.push("--extractor-args".to_string());
-    args.push("youtube:player_client=ios,web,android".to_string());
+    args.push("youtube:player_client=default,-android_sdkless".to_string());
     args.push("--retries".to_string());
     args.push("10".to_string());
     args.push("--fragment-retries".to_string());

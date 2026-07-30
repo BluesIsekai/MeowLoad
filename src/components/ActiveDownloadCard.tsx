@@ -1,5 +1,6 @@
 import React from 'react';
 import { ProgressData } from '../hooks/useDownloader';
+import { formatSpeed, formatEta } from '../utils/formatters';
 
 interface ActiveDownloadCardProps {
   id: string;
@@ -60,8 +61,8 @@ export const ActiveDownloadCard: React.FC<ActiveDownloadCardProps> = ({
             <div className="flex justify-between items-end mb-1.5 font-mono text-xs text-[#c7c4d7]">
               <div className="flex gap-4">
                 <span>{percentage.toFixed(1)}%</span>
-                <span>{progress?.speed || '0 B/s'}</span>
-                <span>ETA: {progress?.eta || '--:--'}</span>
+                <span>{formatSpeed(progress?.speed)}</span>
+                <span>ETA: {formatEta(progress?.eta)}</span>
               </div>
             </div>
 

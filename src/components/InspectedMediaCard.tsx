@@ -41,6 +41,7 @@ export const InspectedMediaCard: React.FC<InspectedMediaCardProps> = ({
 }) => {
   const [downloadType, setDownloadType] = useState<'video' | 'audio'>('video');
   const [selectedResolution, setSelectedResolution] = useState<string>('best');
+  const [audioQuality, setAudioQuality] = useState<string>('0');
   const [videoContainer, setVideoContainer] = useState<string>('mp4');
   const [audioContainer, setAudioContainer] = useState<string>('mp3');
   const [outputDir, setOutputDir] = useState<string>('');
@@ -66,7 +67,7 @@ export const InspectedMediaCard: React.FC<InspectedMediaCardProps> = ({
     let targetContainer: string;
 
     if (downloadType === 'audio' || selectedResolution === 'bestaudio') {
-      formatSpecifier = 'bestaudio/best';
+      formatSpecifier = `bestaudio/best:${audioQuality}`;
       targetContainer = audioContainer || 'mp3';
     } else {
       if (selectedResolution === 'best') {
@@ -227,11 +228,14 @@ export const InspectedMediaCard: React.FC<InspectedMediaCardProps> = ({
             <div>
               <label className="block text-xs font-medium text-[#c7c4d7] mb-1">Audio Quality</label>
               <select
-                value="bestaudio"
-                onChange={(e) => handleQualityChange(e.target.value)}
+                value={audioQuality}
+                onChange={(e) => setAudioQuality(e.target.value)}
                 className="w-full bg-[#27272A] border border-[#34343d] rounded-lg px-3 py-2 text-xs text-[#e4e1ed] focus:ring-1 focus:ring-[#6366F1] focus:border-[#6366F1] focus:outline-none transition-colors"
               >
-                <option value="bestaudio">Best Audio Quality (Auto)</option>
+                <option value="0">Best (320 kbps)</option>
+                <option value="2">High (256 kbps)</option>
+                <option value="4">Standard (192 kbps)</option>
+                <option value="5">Compact (128 kbps)</option>
               </select>
             </div>
 
