@@ -1,12 +1,13 @@
 import React from 'react';
+import catMono from '../assets/Concept C — ML Monogram.svg';
 
 export const Sidebar: React.FC = () => {
   return (
     <nav aria-label="Sidebar Navigation" className="bg-surface text-primary border-r border-surface-variant flex flex-col h-full fixed left-0 top-0 z-40 docked left-0 w-sidebar-width">
       {/* Header */}
       <div className="px-lg py-xl flex flex-col items-center border-b border-surface-variant">
-        <div className="w-16 h-16 rounded-full overflow-hidden mb-sm border border-surface-variant">
-          <img alt="User profile" className="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuANpeIlIvfZBiFKFfN-OSySpRKj0JpqCcqx-eVzBFxDEzXqSolo9eBFllLma-3NQW0yzU_6NRiDfqa1SdpJ_CAZlujl_QmowkDBoKOQ4Qmk4BscwopxQcUbHi8-UU20yZt-rYV2id7M6AEazkwgZqYtoxMXv7HQRUe00uBMG72OzTadUsOITgLPfYlHOYcqCC374xTZQXBHsEJKJi9xy_5QS1_CD26liZPAtXBNJm578S9xNNu9rbQ54g" />
+        <div className="w-16 h-16 rounded-full overflow-hidden mb-sm border border-surface-variant flex items-center justify-center">
+          <img alt="User profile" className="w-full h-full object-cover" src={catMono} />
         </div>
         <h1 className="font-headline-lg text-headline-lg font-bold text-primary">MeowLoad 🐾</h1>
         <p className="font-body-md text-body-md text-on-surface-variant">Media Downloader</p>
