@@ -1,5 +1,4 @@
 import React from 'react';
-import catMono from '../assets/Concept C — ML Monogram.svg';
 
 export const Sidebar: React.FC = () => {
   return (
@@ -7,7 +6,7 @@ export const Sidebar: React.FC = () => {
       {/* Header */}
       <div className="px-lg py-xl flex flex-col items-center border-b border-surface-variant">
         <div className="w-16 h-16 rounded-full overflow-hidden mb-sm border border-surface-variant flex items-center justify-center">
-          <img alt="User profile" className="w-full h-full object-cover" src={catMono} />
+          <img alt="User profile" className="w-full h-full object-cover" src="/Concept A — Cat Glyph.svg" />
         </div>
         <h1 className="font-headline-lg text-headline-lg font-bold text-primary">MeowLoad 🐾</h1>
         <p className="font-body-md text-body-md text-on-surface-variant">Media Downloader</p>
