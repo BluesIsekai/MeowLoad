@@ -86,11 +86,3 @@ Contributions, issues, and feature requests are welcome! Feel free to check the 
 ## 💖 Show Your Support
 
 Give a ⭐️ if this project helped you!
-
----
-
-<p align="center">
-  Made with 💜 and a whole lot of purr-severance
-  <br>
-  <i>"Making downloads purr-fect, one video at a time!"</i>
-</p>
