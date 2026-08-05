@@ -29,7 +29,7 @@ export const URLInput: React.FC<URLInputProps> = ({ onInspect, isLoading }) => {
             onChange={(e) => setUrl(e.target.value)}
             disabled={isLoading}
             placeholder="Paste video or audio link here..."
-            className="w-full bg-transparent border-none text-on-surface focus:ring-0 font-body-md text-body-md px-md placeholder-[#908fa0]"
+            className="w-full bg-transparent border-none outline-none focus:outline-none focus:ring-0 text-on-surface font-body-md text-body-md px-md placeholder-[#908fa0]"
           />
           <button
             type="submit"

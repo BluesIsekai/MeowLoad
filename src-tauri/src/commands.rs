@@ -9,6 +9,13 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 
+#[cfg(target_os = "windows")]
+#[allow(unused_imports)]
+use std::os::windows::process::CommandExt;
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 #[derive(Clone, Serialize)]
 pub struct DownloadProgressPayload {
     pub id: String,
@@ -84,11 +91,12 @@ pub async fn get_media_info(app: AppHandle, url: String) -> Result<Value, String
     let ytdlp_name = if cfg!(target_os = "windows") { "yt-dlp.exe" } else { "yt-dlp" };
     let ytdlp_path = bin_dir.join(ytdlp_name);
 
-    let output = Command::new(ytdlp_path)
-        .args(["--dump-json", "--no-playlist", &url])
-        .output()
-        .await
-        .map_err(|e| e.to_string())?;
+    let mut cmd = Command::new(ytdlp_path);
+    cmd.args(["--dump-json", "--no-playlist", &url]);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let output = cmd.output().await.map_err(|e| e.to_string())?;
 
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr).to_string());
@@ -228,6 +236,8 @@ pub async fn start_download(
     cmd.args(&args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
 
     let mut child = cmd.spawn().map_err(|e| e.to_string())?;
     let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
